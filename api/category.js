@@ -1,6 +1,6 @@
 const NAVER_SHOPPING_API_URL =
   "https://openapi.naver.com/v1/datalab/shopping";
-const CATEGORY_ID = "10004489";
+const CATEGORY_ID = "10006530";
 const CATEGORY_NAME = "신선식품";
 
 function buildRequestBody() {
