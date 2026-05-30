@@ -1,54 +1,59 @@
 const NAVER_SHOPPING_API_URL =
-  "https://openapi.naver.com/v1/datalab/shopping/categories";
-
-function getCategoryId(targetUrl) {
-  try {
-    const parsed = new URL(targetUrl);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    return segments[segments.length - 1] || "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
-function getCategoryConfig() {
-  const sourceUrl =
-    process.env.NAVER_TARGET_CATEGORY_URL ||
-    "https://search.shopping.naver.com/ns/category/100000015";
-  const categoryId = getCategoryId(sourceUrl);
-  const categoryName = process.env.NAVER_TARGET_CATEGORY_NAME || "신선식품";
-  return { sourceUrl, categoryId, categoryName };
-}
+  "https://openapi.naver.com/v1/datalab/shopping";
+const CATEGORY_ID = "10004489";
+const CATEGORY_NAME = "신선식품";
 
 function buildRequestBody() {
-  const { sourceUrl, categoryId, categoryName } = getCategoryConfig();
-  const today = new Date().toISOString().slice(0, 10);
+  const end = new Date();
+  end.setDate(end.getDate() - 1);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+
+  const startDate = start.toISOString().slice(0, 10);
+  const endDate = end.toISOString().slice(0, 10);
 
   return {
-    sourceUrl,
-    categoryId,
-    categoryName,
-    body: {
-      startDate: today,
-      endDate: today,
-      timeUnit: "date",
-      category: [
-        {
-          name: categoryName,
-          param: [categoryId],
-        },
-      ],
-      device: "",
-      gender: "",
-      ages: [],
-    },
+    startDate,
+    endDate,
+    timeUnit: "date",
+    category: [
+      {
+        name: CATEGORY_NAME,
+        param: [CATEGORY_ID],
+      },
+    ],
+    device: "",
+    gender: "",
+    ages: [],
   };
+}
+
+async function postJson(endpoint, body) {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+
+  const response = await fetch(`${NAVER_SHOPPING_API_URL}${endpoint}`, {
+    method: "POST",
+    headers: {
+      "X-Naver-Client-Id": clientId,
+      "X-Naver-Client-Secret": clientSecret,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  try {
+    return { status: response.status, data: JSON.parse(text) };
+  } catch {
+    return { status: response.status, data: { raw: text } };
+  }
 }
 
 module.exports = async function handler(req, res) {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
-  const { sourceUrl, categoryId, categoryName, body } = buildRequestBody();
+  const base = buildRequestBody();
 
   if (!clientId || !clientSecret) {
     res.statusCode = 400;
@@ -57,9 +62,8 @@ module.exports = async function handler(req, res) {
       JSON.stringify(
         {
           message: "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다.",
-          sourceUrl,
-          categoryId,
-          categoryName,
+          categoryId: CATEGORY_ID,
+          categoryName: CATEGORY_NAME,
         },
         null,
         2,
@@ -69,37 +73,40 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(NAVER_SHOPPING_API_URL, {
-      method: "POST",
-      headers: {
-        "X-Naver-Client-Id": clientId,
-        "X-Naver-Client-Secret": clientSecret,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const [categories, gender, age] = await Promise.all([
+      postJson("/categories", base),
+      postJson("/category/gender", {
+        startDate: base.startDate,
+        endDate: base.endDate,
+        timeUnit: base.timeUnit,
+        category: CATEGORY_ID,
+        device: base.device,
+        ages: base.ages,
+      }),
+      postJson("/category/age", {
+        startDate: base.startDate,
+        endDate: base.endDate,
+        timeUnit: base.timeUnit,
+        category: CATEGORY_ID,
+        device: base.device,
+        gender: base.gender,
+      }),
+    ]);
 
-    const text = await response.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { raw: text };
-    }
-
-    res.statusCode = response.ok ? 200 : response.status;
+    res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(
       JSON.stringify(
         {
-          message: response.ok
-            ? "네이버 쇼핑인사이트 데이터를 불러왔습니다."
-            : "네이버 쇼핑인사이트 응답을 확인했습니다.",
-          sourceUrl,
-          categoryId,
-          categoryName,
-          requestBody: body,
-          response: parsed,
+          message: "네이버 쇼핑인사이트 데이터를 불러왔습니다.",
+          categoryId: CATEGORY_ID,
+          categoryName: CATEGORY_NAME,
+          requestBody: base,
+          responses: {
+            categories,
+            gender,
+            age,
+          },
           hasClientId: Boolean(clientId),
           hasClientSecret: Boolean(clientSecret),
         },

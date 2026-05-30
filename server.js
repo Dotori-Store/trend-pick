@@ -6,6 +6,8 @@ const url = require("url");
 const PORT = process.env.PORT || 3000;
 const root = __dirname;
 const API_BASE = "https://openapi.naver.com/v1/datalab/shopping";
+const CATEGORY_ID = "10004489";
+const CATEGORY_NAME = "신선식품";
 
 function loadLocalEnv() {
   const envPath = path.join(root, ".env");
@@ -26,31 +28,6 @@ function readIndex() {
   return fs.readFileSync(path.join(root, "index.html"), "utf8");
 }
 
-function getCategoryId(targetUrl) {
-  try {
-    const parsed = new URL(targetUrl);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    return segments[segments.length - 1] || "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
-function getCategoryConfig() {
-  const sourceUrl =
-    process.env.NAVER_TARGET_CATEGORY_URL ||
-    "https://search.shopping.naver.com/ns/category/100000015";
-  const categoryId = getCategoryId(sourceUrl);
-  const categoryName = process.env.NAVER_TARGET_CATEGORY_NAME || "식품";
-  return { sourceUrl, categoryId, categoryName };
-}
-
-function yesterdayString() {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return date.toISOString().slice(0, 10);
-}
-
 function sevenDaysRange() {
   const end = new Date();
   end.setDate(end.getDate() - 1);
@@ -65,26 +42,20 @@ function sevenDaysRange() {
 }
 
 function buildBaseBody() {
-  const { sourceUrl, categoryId, categoryName } = getCategoryConfig();
   const { startDate, endDate } = sevenDaysRange();
   return {
-    sourceUrl,
-    categoryId,
-    categoryName,
-    base: {
-      startDate,
-      endDate,
-      timeUnit: "date",
-      category: [
-        {
-          name: categoryName,
-          param: [categoryId],
-        },
-      ],
-      device: "",
-      gender: "",
-      ages: [],
-    },
+    startDate,
+    endDate,
+    timeUnit: "date",
+    category: [
+      {
+        name: CATEGORY_NAME,
+        param: [CATEGORY_ID],
+      },
+    ],
+    device: "",
+    gender: "",
+    ages: [],
   };
 }
 
@@ -111,7 +82,7 @@ async function postJson(endpoint, body) {
 }
 
 async function fetchShoppingInsight() {
-  const { sourceUrl, categoryId, categoryName, base } = buildBaseBody();
+  const base = buildBaseBody();
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
@@ -120,9 +91,8 @@ async function fetchShoppingInsight() {
       status: 400,
       json: {
         message: "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없습니다.",
-        sourceUrl,
-        categoryId,
-        categoryName,
+        categoryId: CATEGORY_ID,
+        categoryName: CATEGORY_NAME,
       },
     };
   }
@@ -133,7 +103,7 @@ async function fetchShoppingInsight() {
       startDate: base.startDate,
       endDate: base.endDate,
       timeUnit: base.timeUnit,
-      category: categoryId,
+      category: CATEGORY_ID,
       device: base.device,
       ages: base.ages,
     }),
@@ -141,7 +111,7 @@ async function fetchShoppingInsight() {
       startDate: base.startDate,
       endDate: base.endDate,
       timeUnit: base.timeUnit,
-      category: categoryId,
+      category: CATEGORY_ID,
       device: base.device,
       gender: base.gender,
     }),
@@ -151,9 +121,8 @@ async function fetchShoppingInsight() {
     status: 200,
     json: {
       message: "네이버 쇼핑인사이트 데이터를 불러왔습니다.",
-      sourceUrl,
-      categoryId,
-      categoryName,
+      categoryId: CATEGORY_ID,
+      categoryName: CATEGORY_NAME,
       requestBody: base,
       responses: {
         categories,
@@ -174,15 +143,11 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/category") {
     fetchShoppingInsight()
       .then(({ status, json }) => {
-        res.writeHead(status, {
-          "Content-Type": "application/json; charset=utf-8",
-        });
+        res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify(json, null, 2));
       })
       .catch((error) => {
-        res.writeHead(500, {
-          "Content-Type": "application/json; charset=utf-8",
-        });
+        res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
         res.end(
           JSON.stringify(
             {
